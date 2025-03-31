@@ -20,11 +20,9 @@ def get_env():
         print('❌未添加COOKIE_QUARK变量') 
         send('夸克自动签到', '❌未添加COOKIE_QUARK变量') 
         # 脚本退出 
-        sys.exit(0) 
+        sys.exit(1) 
 
     return cookie_list 
-
-# 其他代码...
 
 class Quark:
     '''
@@ -64,11 +62,7 @@ class Quark:
             "vcode": self.param.get('vcode')
         }
         response = requests.get(url=url, params=querystring).json()
-        #print(response)
-        if response.get("data"):
-            return response["data"]
-        else:
-            return False
+        return response.get("data", False)
 
     def get_growth_sign(self):
         '''
@@ -85,11 +79,10 @@ class Quark:
         }
         data = {"sign_cyclic": True}
         response = requests.post(url=url, json=data, params=querystring).json()
-        #print(response)
         if response.get("data"):
             return True, response["data"]["sign_daily_reward"]
         else:
-            return False, response["message"]
+            return False, response.get("message", "未知错误")
 
     def queryBalance(self):
         '''
@@ -101,16 +94,12 @@ class Quark:
             "kps": self.param.get('kps'),
         }
         response = requests.get(url=url, params=querystring).json()
-        # print(response)
-        if response.get("data"):
-            return response["data"]["balance"]
-        else:
-            return response["msg"]
+        return response.get("data", {}).get("balance", response.get("msg", "查询失败"))
 
     def do_sign(self):
         '''
         执行签到任务
-        :return: 返回一个字符串，包含签到结果
+        :return: 返回一个元组，包含success（布尔值）和log字符串
         '''
         log = ""
         # 每日领空间
@@ -129,6 +118,7 @@ class Quark:
                     f"✅ 签到日志: 今日已签到+{self.convert_bytes(growth_info['cap_sign']['sign_daily_reward'])}，"
                     f"连签进度({growth_info['cap_sign']['sign_progress']}/{growth_info['cap_sign']['sign_target']})\n"
                 )
+                return True, log
             else:
                 sign, sign_return = self.get_growth_sign()
                 if sign:
@@ -136,12 +126,13 @@ class Quark:
                         f"✅ 执行签到: 今日签到+{self.convert_bytes(sign_return)}，"
                         f"连签进度({growth_info['cap_sign']['sign_progress'] + 1}/{growth_info['cap_sign']['sign_target']})\n"
                     )
+                    return True, log
                 else:
                     log += f"❌ 签到异常: {sign_return}\n"
+                    return False, log
         else:
             log += f"❌ 签到异常: 获取成长信息失败\n"
-
-        return log
+            return False, log
 
 
 def main():
@@ -150,7 +141,7 @@ def main():
     :return: 返回一个字符串，包含签到结果
     '''
     msg = ""
-    global cookie_quark
+    has_error = False
     cookie_quark = get_env()
 
     print("✅ 检测到共", len(cookie_quark), "个夸克账号\n")
@@ -162,24 +153,22 @@ def main():
         for a in cookie_quark[i].replace(" ", "").split(';'):
             if not a == '':
                 user_data.update({a[0:a.index('=')]: a[a.index('=') + 1:]})
-        # print(user_data)
         # 开始任务
-        log = f"🙍🏻‍♂️ 第{i + 1}个账号"
-        msg += log
+        log_prefix = f"🙍🏻‍♂️ 第{i + 1}个账号"
+        msg += log_prefix
         # 登录
-        log = Quark(user_data).do_sign()
+        success, log = Quark(user_data).do_sign()
         msg += log + "\n"
-
+        if not success:
+            has_error = True
         i += 1
 
-    # print(msg)
-
-    try:
-        send('夸克自动签到', msg)
-    except Exception as err:
-        print('%s\n❌ 错误，请查看运行日志！' % err)
-
-    return msg[:-1]
+    # 发送通知
+    send('夸克自动签到', msg)
+    
+    # 如果有错误，退出并返回非零码
+    if has_error:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
